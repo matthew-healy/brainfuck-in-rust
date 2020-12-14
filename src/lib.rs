@@ -1,9 +1,6 @@
 #![forbid(unsafe_code)]
 
-mod ast;
 mod error;
-mod lexer;
-mod parser;
 
 use crate::error::*;
 
