@@ -26,6 +26,9 @@ mod token {
     ];
 }
 
+pub const ARRAY_LEN: usize = 30_000;
+pub const EOF: u8 = 0;
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum InstructionKind {
     IncrementPointer,
@@ -51,9 +54,9 @@ impl InstructionKind {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Instruction {
-    index: usize,
-    kind: InstructionKind,
-    times: usize,
+    pub index: usize,
+    pub kind: InstructionKind,
+    pub times: usize,
 }
 
 impl Instruction {

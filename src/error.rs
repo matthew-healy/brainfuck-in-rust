@@ -1,6 +1,7 @@
 use std::{
     fmt,
-    error
+    error,
+    io,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -12,6 +13,7 @@ pub enum Error {
 }
 
 impl error::Error for Error {}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Error::*;
@@ -21,5 +23,11 @@ impl fmt::Display for Error {
             UnbalancedBrackets => write!(f, "Error: unbalanced brackets in source"),
             InfiniteLoop => write!(f, "Error: potential infinite loop in source"),
         }
+    }
+}
+
+impl From<Error> for io::Error {
+    fn from(e: Error) -> Self {
+        io::Error::new(io::ErrorKind::Other, e)
     }
 }
