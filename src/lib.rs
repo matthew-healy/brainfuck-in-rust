@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-mod error;
+pub mod error;
 
 use crate::error::*;
 
