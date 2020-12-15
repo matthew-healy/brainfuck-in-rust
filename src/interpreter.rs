@@ -1,57 +1,29 @@
-use brainfuck::{
+use crate::{
+    ARRAY_LEN,
     EOF,
-    lexer::Lexer,
-    parser::Parser,
+    ast::{self, Program, Block}
 };
 
-use std::{
-    env,
-    io::{self, Read, Write, Bytes}
-};
-
-fn main() -> io::Result<()> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
-        println!("Useage: program path/to/brainfuck/src.b");
-        std::process::exit(1);
-    }
-
-    let src = std::fs::read_to_string(&args[1])?;
-    let stdin = io::stdin();
-    let stdin = stdin.lock();
-    let stdout = io::stdout();
-    let stdout = stdout.lock();
-
-    let lexer = Lexer::new(&src);
-    let parser = Parser::new(lexer);
-
-    let mut interpreter = Interpreter::new(stdin, stdout);
-    interpreter.interpret(parser.parse().unwrap());
-
-    Ok(())
-}
-
-use brainfuck::ast::*;
-
-struct Interpreter<R: Read, W: Write> {
+use std::io::{Read, Write, Bytes};
+pub struct Interpreter<R: Read, W: Write> {
     reader: Bytes<R>,
     writer: W,
     runtime: Runtime,
 }
 
 impl <R: Read, W: Write> Interpreter<R, W> {
-    fn new(reader: R, writer: W) -> Self {
+    pub fn new(reader: R, writer: W) -> Self {
         let reader = reader.bytes();
         Self { reader, writer, runtime: Runtime::new() }
     }
 
-    fn interpret(&mut self, program: Program) {
+    pub fn interpret(&mut self, program: Program) {
         program.accept(self);
         self.writer.flush().expect("Handle this error better");
     }
 }
 
-impl <R: Read, W: Write> Visitor for Interpreter<R, W> {
+impl <R: Read, W: Write> ast::Visitor for Interpreter<R, W> {
     fn visit_increment_pointer(&mut self, times: usize) {
         self.runtime.increment_pointer(times);
     }
@@ -103,13 +75,13 @@ impl <R: Read, W: Write> Visitor for Interpreter<R, W> {
 }
 
 struct Runtime {
-    memory: [u8; 30_000],
+    memory: [u8; ARRAY_LEN],
     pointer: usize,
 }
 
 impl Runtime {
     fn new() -> Self {
-        Runtime { memory: [0; 30_000], pointer: 0 }
+        Runtime { memory: [0; ARRAY_LEN], pointer: 0 }
     }
 
     fn increment_pointer(&mut self, times: usize) {

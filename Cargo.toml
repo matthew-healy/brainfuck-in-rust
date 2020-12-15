@@ -6,4 +6,4 @@ edition = "2018"
 
 [[bin]]
 name = "bf_interpreter"
-path = "src/interpreter.rs"
+path = "src/interpreter_main.rs"

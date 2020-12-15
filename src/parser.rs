@@ -1,8 +1,14 @@
 use crate::{
     ast::*,
     error::*,
-    lexer::Token,
+    lexer::*,
 };
+
+pub fn parse(source: &str) -> Result<Program, Error> {
+    let lexer = Lexer::new(source);
+    let parser = Parser::new(lexer);
+    parser.parse()
+}
 
 pub struct Parser<Lex: Iterator<Item=Token>> {
     input: std::iter::Peekable<Lex>
