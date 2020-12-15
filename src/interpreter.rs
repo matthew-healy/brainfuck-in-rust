@@ -1,106 +1,13 @@
 use brainfuck::{
-    ARRAY_LEN,
     EOF,
-    error::Error,
-    Instruction,
-    InstructionKind,
-    parse,
+    lexer::Lexer,
+    parser::Parser,
 };
 
 use std::{
     env,
     io::{self, Read, Write, Bytes}
 };
-
-fn run<R: Read, W: Write>(instructions: &[Instruction], mut input: Bytes<R>, output: &mut W) -> Result<(), Error> {
-    let mut memory = [0_u8; ARRAY_LEN];
-    let mut pointer = 0;
-    let mut instruction_pointer = 0;
-
-    while instruction_pointer < instructions.len() {
-        let Instruction { kind, times, .. } = &instructions[instruction_pointer];
-        use InstructionKind::*;
-        match kind {
-            IncrementPointer => {
-                pointer += times;
-                if pointer >= ARRAY_LEN {
-                    return Err(Error::PointerAboveLimit)
-                }
-                instruction_pointer += 1;
-            },
-            DecrementPointer => {
-                if *times > pointer {
-                    return Err(Error::PointerBelowZero)
-                }
-                pointer -= times;
-                instruction_pointer += 1;
-            },
-            IncrementByte => {
-                memory[pointer] = memory[pointer].wrapping_add(*times as u8);
-                instruction_pointer += 1;
-            },
-            DecrementByte => {
-                memory[pointer] = memory[pointer].wrapping_sub(*times as u8);
-                instruction_pointer += 1;
-            },
-            WriteByte => {
-                for _ in 0..*times {
-                    let result = output.write(&[memory[pointer]]);
-                    match result {
-                        Ok(bytes_written) if bytes_written < 1 => {
-                            panic!("Failed to write byte {} to output", memory[pointer]);
-                        },
-                        Err(error) => {
-                            panic!("Failed to write byte to out with error {}", error);
-                        },
-                        Ok(_) => (),
-                    }
-                }
-                instruction_pointer += 1;
-            },
-            ReadByte => {
-                if let Err(error) = output.flush() {
-                    panic!("Error while flushing out: {}", error);
-                }
-                for _ in 0..*times {
-                    let maybe_byte = input.next();
-                    match maybe_byte {
-                        Some(Ok(byte)) => {
-                            memory[pointer] = byte;
-                        },
-                        None => {
-                            memory[pointer] = EOF;
-                        },
-                        Some(Err(error)) => {
-                            panic!("Error while trying to ready byte from input: {}", error);
-                        },
-                    }
-                    instruction_pointer += 1;
-                }
-            },
-            LoopStart { end_index } => {
-                if memory[pointer] == 0 {
-                    instruction_pointer = *end_index;
-                } else {
-                    instruction_pointer += 1;
-                }
-            },
-            LoopEnd { start_index } => {
-                if memory[pointer] != 0 {
-                    instruction_pointer = *start_index;
-                } else {
-                    instruction_pointer += 1;
-                }
-            },
-        }
-    }
-    Ok(())
-}
-
-fn parse_and_run<R: Read, W: Write>(src: &str, input: Bytes<R>, output: &mut W) -> Result<(), Error> {
-    let instructions = parse(src)?;
-    run(&instructions, input, output)
-}
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -111,12 +18,129 @@ fn main() -> io::Result<()> {
 
     let src = std::fs::read_to_string(&args[1])?;
     let stdin = io::stdin();
-    let input = stdin.lock().bytes();
+    let stdin = stdin.lock();
     let stdout = io::stdout();
-    let mut output = stdout.lock();
+    let stdout = stdout.lock();
 
-    parse_and_run(&src, input, &mut output)?;
-    output.flush()?;
+    let lexer = Lexer::new(&src);
+    let parser = Parser::new(lexer);
+
+    let mut interpreter = Interpreter::new(stdin, stdout);
+    interpreter.interpret(parser.parse().unwrap());
 
     Ok(())
+}
+
+use brainfuck::ast::*;
+
+struct Interpreter<R: Read, W: Write> {
+    reader: Bytes<R>,
+    writer: W,
+    runtime: Runtime,
+}
+
+impl <R: Read, W: Write> Interpreter<R, W> {
+    fn new(reader: R, writer: W) -> Self {
+        let reader = reader.bytes();
+        Self { reader, writer, runtime: Runtime::new() }
+    }
+
+    fn interpret(&mut self, program: Program) {
+        program.accept(self);
+        self.writer.flush().expect("Handle this error better");
+    }
+}
+
+impl <R: Read, W: Write> Visitor for Interpreter<R, W> {
+    fn visit_increment_pointer(&mut self, times: usize) {
+        self.runtime.increment_pointer(times);
+    }
+
+    fn visit_decrement_pointer(&mut self, times: usize) {
+        self.runtime.decrement_pointer(times);
+    }
+
+    fn visit_increment_byte(&mut self, times: usize) {
+        self.runtime.increment_byte(times);
+    }
+
+    fn visit_decrement_byte(&mut self, times: usize) {
+        self.runtime.decrement_byte(times);
+    }
+
+    fn visit_write_byte(&mut self, times: usize) {
+        for _ in 0..times {
+            match self.writer.write(&[self.runtime.get_byte()]) {
+                Ok(write_count) if write_count < 1 => {
+                    panic!("Handle this error better");
+                },
+                Err(_error) => {
+                    panic!("Also handle this error better")
+                },
+                Ok(_) => (),
+            }
+        }
+    }
+
+    fn visit_read_byte(&mut self, times: usize) {
+        if let Err(_e) = self.writer.flush() {
+            panic!("Handle this better");
+        }
+        for _ in 0..times {
+            match self.reader.next() {
+                Some(Ok(byte)) => self.runtime.set_byte(byte),
+                None => self.runtime.set_byte(EOF),
+                Some(Err(_error)) => panic!("Handle this error better"),
+            }
+        }
+    }
+
+    fn visit_loop(&mut self, block: &Block) {
+        while self.runtime.get_byte() > 0 {
+            block.accept(self);
+        }
+    }
+}
+
+struct Runtime {
+    memory: [u8; 30_000],
+    pointer: usize,
+}
+
+impl Runtime {
+    fn new() -> Self {
+        Runtime { memory: [0; 30_000], pointer: 0 }
+    }
+
+    fn increment_pointer(&mut self, times: usize) {
+        self.pointer += times;
+        if self.pointer >= self.memory.len() {
+            panic!("Handle this error better")
+        }
+    }
+
+    fn decrement_pointer(&mut self, times: usize) {
+        if times > self.pointer {
+            panic!("Handle this error also better")
+        }
+        self.pointer -= times;
+    }
+
+    fn increment_byte(&mut self, times: usize) {
+        let pointee = self.memory[self.pointer];
+        self.memory[self.pointer] = pointee.wrapping_add(times as u8);
+    }
+
+    fn decrement_byte(&mut self, times: usize) {
+        let pointee = self.memory[self.pointer];
+        self.memory[self.pointer] = pointee.wrapping_sub(times as u8);
+    }
+
+    fn get_byte(&mut self) -> u8 {
+        self.memory[self.pointer]
+    }
+
+    fn set_byte(&mut self, to: u8) {
+        self.memory[self.pointer] = to;
+    }
 }

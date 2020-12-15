@@ -4,16 +4,16 @@ use crate::{
     lexer::Token,
 };
 
-struct Parser<Lex: Iterator<Item=Token>> {
+pub struct Parser<Lex: Iterator<Item=Token>> {
     input: std::iter::Peekable<Lex>
 }
 
 impl <Lex: Iterator<Item=Token>> Parser<Lex> {
-    fn new(input: Lex) -> Self {
+    pub fn new(input: Lex) -> Self {
         Self { input: input.peekable() }
     }
 
-    fn parse(mut self) -> Result<Program, Error> {
+    pub fn parse(mut self) -> Result<Program, Error> {
         let mut program = Program::new();
         while let Some(token) = self.input.next() {
             use Token::*;
